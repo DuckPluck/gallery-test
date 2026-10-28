@@ -137,12 +137,24 @@ test('mobile tap, fixed tray and touch transfer', async ({ browser }) => {
   await context.close();
 });
 
-test('media loads as silent looping video and errors offer retry', async ({ page, browser }) => {
-  const video = page.locator('video').first();
-  await expect.poll(() => video.evaluate(node => node.readyState)).toBeGreaterThanOrEqual(2);
+test('media loads as silent looping video and errors offer retry', async ({ page, browserName, playwright }) => {
+  test.setTimeout(90000);
+  await page.close();
+  // Isolate the native decoder pool from media pipelines used by earlier cases.
+  const browser = await playwright[browserName].launch(browserName === 'webkit'
+    ? { env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !/proxy/i.test(key))) }
+    : {});
+  const mediaPage = await browser.newPage();
+  const mediaErrors = [];
+  mediaPage.on('pageerror', error => mediaErrors.push(error.message));
+  await mediaPage.goto('http://localhost:4173');
+  const video = mediaPage.locator('video').first();
+  await expect.poll(() => video.evaluate(node => node.readyState), { timeout: 15000 }).toBeGreaterThanOrEqual(2);
   expect(await video.evaluate(node => node.muted && node.loop && node.hasAttribute('playsinline') && Math.abs(node.duration - 3) < .1)).toBe(true);
+  await mediaPage.close();
   const context = await browser.newContext();
   const broken = await context.newPage();
+  broken.on('pageerror', error => mediaErrors.push(error.message));
   let unavailable = true;
   // A real HTTP failure also exercises WebKit's native media network stack.
   const proxy = createServer((incoming, response) => {
@@ -160,17 +172,21 @@ test('media loads as silent looping video and errors offer retry', async ({ page
   await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
   try {
     await broken.goto(`http://127.0.0.1:${proxy.address().port}`);
+    await broken.bringToFront();
+    expect(await broken.evaluate(() => document.hidden)).toBe(false);
     const retry = broken.locator('#clip-1-1 .clip-retry');
     await expect(retry).toBeVisible();
     unavailable = false;
     await broken.locator('#clip-1-1 .clip-preview').focus();
     await retry.click();
-    await expect.poll(() => broken.locator('video').first().evaluate(node => node.readyState)).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => broken.locator('video').first().evaluate(node => node.readyState), { timeout: 20000 }).toBeGreaterThanOrEqual(2);
   } finally {
     await context.close();
+    await browser.close();
     proxy.closeAllConnections();
     await new Promise(resolve => proxy.close(resolve));
   }
+  expect(mediaErrors).toEqual([]);
 });
 
 test('touch drag and automatic edge scrolling', async ({ browser, browserName }) => {

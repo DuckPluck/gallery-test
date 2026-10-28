@@ -3,8 +3,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/browser',
   fullyParallel: false,
-  workers: 2,
-  timeout: 30000,
+  workers: 1,
+  timeout: 60000,
   use: { baseURL: 'http://localhost:4173', viewport: { width: 1440, height: 1000 }, trace: 'retain-on-failure' },
   projects: ['chromium', 'firefox', 'webkit'].map(browserName => ({
     name: browserName,

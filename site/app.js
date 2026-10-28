@@ -40,7 +40,7 @@ for (const [groupIndex, group] of groups.entries()) {
     const video = card.querySelector('video');
     const retry = card.querySelector('.clip-retry');
     video.muted = true;
-    const player = { video, retry, clip, visible: false, loaded: false, problem: null, attempts: 0, phaseApplied: false, pending: null };
+    const player = { video, retry, clip, visible: false, loaded: false, problem: null, attempts: 0, phaseApplied: false, startReady: clip.phase === 0, startTimer: null, pending: null };
     players.push(player);
     const geometry = { card, button, x: 0, y: 0, width: 0, height: 0, current: null, target: null };
     state.cards.push(geometry);
@@ -52,24 +52,49 @@ for (const [groupIndex, group] of groups.entries()) {
       retry.setAttribute('aria-label', `${problem === 'error' ? 'Повторить загрузку' : 'Запустить'}: ${clip.label}`);
     };
     player.setProblem = setProblem;
-    video.addEventListener('loadeddata', () => {
-      if (!player.phaseApplied && Number.isFinite(video.duration) && video.duration > 0) {
-        // Seek once after the first frame; early WebKit seeks can restart loading.
-        player.phaseApplied = true;
-        if (clip.phase > 0) video.currentTime = video.duration * clip.phase;
-      }
-      syncPlayer(player);
-    });
-    video.addEventListener('error', () => setProblem('error'));
-    video.addEventListener('play', () => {
-      if (paused || document.hidden || !player.visible) video.pause();
-    });
+    const bindVideo = media => {
+      media.muted = true;
+      media.addEventListener('loadedmetadata', () => {
+        if (player.video !== media) return;
+        if (!player.phaseApplied && Number.isFinite(media.duration) && media.duration > 0) {
+          // Stagger playback instead of seeking, which can restart WebKit loading.
+          player.phaseApplied = true;
+          player.startTimer = setTimeout(() => {
+            player.startReady = true;
+            syncPlayer(player);
+          }, media.duration * clip.phase * 1000);
+        }
+        syncPlayer(player);
+      });
+      media.addEventListener('error', () => { if (player.video === media) setProblem('error'); });
+      media.addEventListener('play', () => {
+        if (player.video !== media || paused || document.hidden || !player.visible) media.pause();
+      });
+    };
+    bindVideo(video);
     retry.addEventListener('click', () => {
       const failedLoad = player.problem === 'error';
       if (failedLoad) {
         player.attempts++;
-        player.phaseApplied = false;
-        video.load();
+        clearTimeout(player.startTimer);
+        player.phaseApplied = true;
+        player.startReady = true;
+        // Recreate WebKit's failed decoder as well as its cached resource.
+        const previous = player.video;
+        visibility.unobserve(previous);
+        previous.pause();
+        const replacement = previous.cloneNode(false);
+        replacement.removeAttribute('src');
+        replacement.autoplay = false;
+        player.video = replacement;
+        previous.replaceWith(replacement);
+        previous.removeAttribute('src');
+        previous.load();
+        bindVideo(replacement);
+        const url = new URL(clip.src, location.href);
+        url.searchParams.set('retry', String(player.attempts));
+        replacement.src = url.href;
+        visibility.observe(replacement);
       }
       setProblem(null);
       if (!failedLoad) paused = false;
@@ -131,7 +156,8 @@ function renderAnswers() {
   document.querySelectorAll('[data-slot]').forEach((button, index) => {
     const emotion = slots[index];
     button.querySelector('.slot-answer').textContent = emotion ? label(emotion) : 'Перенесите эмоцию';
-    button.querySelector('.slot-sign').textContent = emotion ? '↗' : '+';
+    const sign = emotion ? 'M5 15 15 5M5 5h10v10' : 'M10 4v12M4 10h12';
+    button.querySelector('.slot-sign').innerHTML = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="${sign}"/></svg>`;
     button.classList.toggle('assigned', Boolean(emotion));
     button.setAttribute('aria-pressed', String(Boolean(emotion && selected === emotion)));
     if (emotion) button.dataset.emotion = emotion;
@@ -364,7 +390,7 @@ for (const pile of piles) resize.observe(pile.element);
 addEventListener('scroll', () => { for (const pile of piles) pile.rect = pile.element.getBoundingClientRect(); }, { passive: true });
 
 function syncPlayer(player) {
-  const shouldPlay = !paused && !document.hidden && player.visible;
+  const shouldPlay = !paused && !document.hidden && player.visible && player.startReady;
   if (player.video.autoplay !== shouldPlay) player.video.autoplay = shouldPlay;
   if (!shouldPlay) { if (!player.video.paused) player.video.pause(); return; }
   if (!player.loaded || player.problem === 'error' || !player.video.paused || player.pending === player.attempts) return;
@@ -390,6 +416,7 @@ function syncPlayback() {
 const visibility = new IntersectionObserver(entries => {
   for (const entry of entries) {
     const player = players.find(item => item.video === entry.target);
+    if (!player) continue;
     player.visible = entry.isIntersecting;
     if (player.visible && !player.loaded) {
       player.loaded = true;
