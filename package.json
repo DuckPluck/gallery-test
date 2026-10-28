@@ -1,0 +1,19 @@
+{
+  "name": "emotion-gallery-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/state.test.mjs",
+    "test:browser": "playwright test",
+    "test:ui": "node scripts/ui-checks.mjs",
+    "media": "node scripts/generate-media.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@playwright/test": "^1.64.1",
+    "ux-ui-agent-skills": "^3.0.0"
+  }
+}

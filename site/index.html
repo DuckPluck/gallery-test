@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f4ef">
+  <meta name="description" content="Рассмотрите четыре группы видео и подберите чувство для каждой. Интерактивное демо с переносом ответов.">
+  <title>Какое это чувство? · Реакции</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./theme.css">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#gallery">К группам видео</a>
+  <header class="topbar page-width">
+    <a class="wordmark" href="./">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="2" fill="currentColor"/><rect x="14" y="2" width="8" height="8" rx="2" fill="currentColor"/><rect x="2" y="14" width="8" height="8" rx="2" fill="currentColor"/><circle cx="18" cy="18" r="4" fill="currentColor"/></svg>
+      Реакции <span class="demo-badge">Демо</span>
+    </a>
+    <div class="actions">
+      <button class="quiet-button" id="playback" type="button">Пауза видео</button>
+      <button class="quiet-button" id="reset" type="button" disabled>Начать заново</button>
+    </div>
+  </header>
+  <main class="page-width">
+    <section class="intro" aria-labelledby="page-title">
+      <div>
+        <h1 id="page-title">Какое это чувство?</h1>
+        <p class="lead">Рассмотрите видео. Подберите эмоцию для каждой группы.</p>
+      </div>
+      <p class="view-hint"><span class="pointer-hint">Приблизьте курсор к видео,<br>чтобы рассмотреть его.</span><span class="touch-hint">Нажмите на видео,<br>чтобы рассмотреть его.</span></p>
+    </section>
+    <section id="gallery" class="gallery" aria-label="Четыре группы видео" tabindex="-1"></section>
+    <aside class="demo-note"><span class="small-dot" aria-hidden="true"></span>Сейчас здесь видеозаглушки. Своих актёров добавим позже.</aside>
+    <section class="answer-tray" aria-labelledby="answer-title">
+      <div class="tray-heading">
+        <h2 id="answer-title">Четыре чувства. Ваш выбор.</h2>
+        <p id="progress" role="status" aria-live="polite" aria-atomic="true">Распределено 0 из 4</p>
+      </div>
+      <div class="emotion-list" id="emotion-list"></div>
+      <p class="tray-hint" id="selection-hint">Перетащите эмоцию в слот или выберите её, а затем нажмите на слот.</p>
+    </section>
+  </main>
+  <div class="sr-only" id="announcer" role="status" aria-live="polite" aria-atomic="true"></div>
+  <noscript><p class="no-script">Для просмотра демо включите JavaScript в браузере.</p></noscript>
+</body>
+</html>
