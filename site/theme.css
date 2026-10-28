@@ -16,6 +16,8 @@
   --shadow-active: 0 .4rem .8rem #272b2524, 0 1rem 2rem #272b2518;
   --shadow-tray: 0 -.25rem 1.5rem #272b250b;
   --shadow-ghost: 0 .5rem 1.5rem #272b2533;
+  --shadow-popover: 0 .75rem 3rem #272b252b, 0 .125rem .5rem #272b2514;
+  --related-scale: 1.12;
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --text-tiny: .6875rem;
   --text-small: .8125rem;

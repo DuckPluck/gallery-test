@@ -15,9 +15,117 @@ let drag = null;
 let suppressClick = false;
 const players = [];
 const piles = [];
+const related = { owner: null, index: null, cards: [], players: [], timer: null, loadTimer: null, switchTimer: null, nextSource: null, animation: null, pointerInside: false, corridor: null };
+const motionStyle = getComputedStyle(document.documentElement);
+const relatedDelay = parseFloat(motionStyle.getPropertyValue('--duration-fast'));
+const relatedDuration = parseFloat(motionStyle.getPropertyValue('--duration-base'));
+const relatedEasing = motionStyle.getPropertyValue('--ease-out').trim();
+let restoringSourceFocus = false;
+const relatedPanel = document.createElement('section');
+relatedPanel.id = 'related-videos';
+relatedPanel.className = 'related-popover';
+relatedPanel.hidden = true;
+relatedPanel.setAttribute('aria-labelledby', 'related-title');
+relatedPanel.innerHTML = '<header class="related-heading"><div><h2 id="related-title">Связанные видео</h2><p class="related-caption"></p></div><button class="related-close quiet-button" type="button" aria-label="Закрыть связанные видео"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></header><div class="related-grid"></div>';
+document.body.append(relatedPanel);
+relatedPanel.querySelector('.related-close').addEventListener('click', () => closeRelated(true));
+relatedPanel.addEventListener('pointerenter', () => {
+  related.pointerInside = true;
+  clearTimeout(related.timer);
+  cancelRelatedSwitch();
+});
+relatedPanel.addEventListener('pointerleave', event => {
+  if (event.pointerType !== 'mouse') return;
+  related.pointerInside = Boolean(related.owner?.cards[related.index].card.contains(event.relatedTarget)) || inRelatedCorridor(event.clientX, event.clientY);
+  if (!related.pointerInside) scheduleRelatedClose();
+});
+relatedPanel.addEventListener('focusin', () => {
+  clearTimeout(related.timer);
+  related.animation?.finish();
+});
+relatedPanel.addEventListener('focusout', event => { if (!relatedPanel.contains(event.relatedTarget)) scheduleRelatedClose(); });
 const grip = '<svg class="grip" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1"/><circle cx="11" cy="4" r="1"/><circle cx="5" cy="8" r="1"/><circle cx="11" cy="8" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="11" cy="12" r="1"/></svg>';
 const playIcon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m7 4 9 6-9 6Z"/></svg>';
 const retryIcon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M16 6a7 7 0 1 0 1 7M16 2v5h-5"/></svg>';
+
+function createVideoCard(clip, index, isRelated = false) {
+  const card = document.createElement('div');
+  card.className = isRelated ? 'related-clip' : 'clip';
+  card.id = clip.id;
+  card.dataset.active = 'false';
+  card.innerHTML = `<button class="clip-preview" type="button" aria-label="${clip.label}. ${isRelated ? 'Увеличить' : 'Связанные видео'}" aria-pressed="false"><video muted loop playsinline preload="metadata" poster="${clip.poster}" aria-hidden="true"></video><span class="clip-index" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span></button><button class="clip-retry" type="button" hidden></button>`;
+  const button = card.querySelector('.clip-preview');
+  const video = card.querySelector('video');
+  const retry = card.querySelector('.clip-retry');
+  video.muted = true;
+  const player = { video, retry, clip, visible: false, loaded: false, problem: null, attempts: 0, phaseApplied: false, startReady: clip.phase === 0, startTimer: null, pending: null };
+  players.push(player);
+
+  const setProblem = problem => {
+    player.problem = problem;
+    retry.hidden = !problem;
+    retry.innerHTML = problem === 'error' ? retryIcon : playIcon;
+    retry.setAttribute('aria-label', `${problem === 'error' ? 'Повторить загрузку' : 'Запустить'}: ${player.clip.label}`);
+  };
+  player.setProblem = setProblem;
+  const bindVideo = media => {
+    media.muted = true;
+    media.addEventListener('loadedmetadata', () => {
+      if (player.video !== media) return;
+      if (!player.phaseApplied && Number.isFinite(media.duration) && media.duration > 0) {
+        // Stagger playback instead of seeking, which can restart WebKit loading.
+        player.phaseApplied = true;
+        player.startTimer = setTimeout(() => {
+          player.startReady = true;
+          syncPlayer(player);
+        }, media.duration * player.clip.phase * 1000);
+      }
+      syncPlayer(player);
+    });
+    media.addEventListener('error', () => { if (player.video === media) setProblem('error'); });
+    media.addEventListener('play', () => {
+      if (player.video !== media || paused || document.hidden || !player.visible) media.pause();
+    });
+  };
+  bindVideo(video);
+  retry.addEventListener('click', () => {
+    const failedLoad = player.problem === 'error';
+    if (failedLoad) {
+      player.attempts++;
+      clearTimeout(player.startTimer);
+      player.phaseApplied = true;
+      player.startReady = true;
+      // Recreate WebKit's failed decoder as well as its cached resource.
+      const previous = player.video;
+      visibility.unobserve(previous);
+      previous.pause();
+      const replacement = previous.cloneNode(false);
+      replacement.removeAttribute('src');
+      replacement.autoplay = false;
+      player.video = replacement;
+      previous.replaceWith(replacement);
+      previous.removeAttribute('src');
+      previous.load();
+      bindVideo(replacement);
+      const url = new URL(player.clip.src, location.href);
+      url.searchParams.set('retry', String(player.attempts));
+      replacement.src = url.href;
+      visibility.observe(replacement);
+    }
+    setProblem(null);
+    if (!failedLoad) paused = false;
+    syncPlayback();
+  });
+  player.suspend = () => {
+    player.attempts++;
+    player.visible = false;
+    clearTimeout(player.startTimer);
+    visibility.unobserve(player.video);
+    player.video.autoplay = false;
+    if (!player.video.paused) player.video.pause();
+  };
+  return { card, button, retry, player };
+}
 
 for (const [groupIndex, group] of groups.entries()) {
   const section = document.createElement('section');
@@ -30,90 +138,39 @@ for (const [groupIndex, group] of groups.entries()) {
   piles.push(state);
 
   for (const [index, clip] of group.videos.entries()) {
-    const card = document.createElement('div');
-    card.className = 'clip';
-    card.id = clip.id;
-    card.dataset.active = 'false';
-    card.innerHTML = `<button class="clip-preview" type="button" aria-label="${clip.label}. Увеличить" aria-pressed="false"><video muted loop playsinline preload="metadata" poster="${clip.poster}" aria-hidden="true"></video><span class="clip-index" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span></button><button class="clip-retry" type="button" hidden></button>`;
+    const { card, button, retry } = createVideoCard(clip, index);
     pile.append(card);
-    const button = card.querySelector('.clip-preview');
-    const video = card.querySelector('video');
-    const retry = card.querySelector('.clip-retry');
-    video.muted = true;
-    const player = { video, retry, clip, visible: false, loaded: false, problem: null, attempts: 0, phaseApplied: false, startReady: clip.phase === 0, startTimer: null, pending: null };
-    players.push(player);
-    const geometry = { card, button, x: 0, y: 0, width: 0, height: 0, current: null, target: null };
+    button.setAttribute('aria-expanded', 'false');
+    button.setAttribute('aria-controls', 'related-videos');
+    const geometry = { card, button, clip, x: 0, y: 0, width: 0, height: 0, current: null, target: null };
     state.cards.push(geometry);
-
-    const setProblem = problem => {
-      player.problem = problem;
-      retry.hidden = !problem;
-      retry.innerHTML = problem === 'error' ? retryIcon : playIcon;
-      retry.setAttribute('aria-label', `${problem === 'error' ? 'Повторить загрузку' : 'Запустить'}: ${clip.label}`);
-    };
-    player.setProblem = setProblem;
-    const bindVideo = media => {
-      media.muted = true;
-      media.addEventListener('loadedmetadata', () => {
-        if (player.video !== media) return;
-        if (!player.phaseApplied && Number.isFinite(media.duration) && media.duration > 0) {
-          // Stagger playback instead of seeking, which can restart WebKit loading.
-          player.phaseApplied = true;
-          player.startTimer = setTimeout(() => {
-            player.startReady = true;
-            syncPlayer(player);
-          }, media.duration * clip.phase * 1000);
-        }
-        syncPlayer(player);
-      });
-      media.addEventListener('error', () => { if (player.video === media) setProblem('error'); });
-      media.addEventListener('play', () => {
-        if (player.video !== media || paused || document.hidden || !player.visible) media.pause();
-      });
-    };
-    bindVideo(video);
-    retry.addEventListener('click', () => {
-      const failedLoad = player.problem === 'error';
-      if (failedLoad) {
-        player.attempts++;
-        clearTimeout(player.startTimer);
-        player.phaseApplied = true;
-        player.startReady = true;
-        // Recreate WebKit's failed decoder as well as its cached resource.
-        const previous = player.video;
-        visibility.unobserve(previous);
-        previous.pause();
-        const replacement = previous.cloneNode(false);
-        replacement.removeAttribute('src');
-        replacement.autoplay = false;
-        player.video = replacement;
-        previous.replaceWith(replacement);
-        previous.removeAttribute('src');
-        previous.load();
-        bindVideo(replacement);
-        const url = new URL(clip.src, location.href);
-        url.searchParams.set('retry', String(player.attempts));
-        replacement.src = url.href;
-        visibility.observe(replacement);
-      }
-      setProblem(null);
-      if (!failedLoad) paused = false;
-      syncPlayback();
-    });
     let lastPointer = 'mouse';
     button.addEventListener('pointerdown', event => { lastPointer = event.pointerType; });
-    button.addEventListener('click', () => {
+    button.addEventListener('click', event => {
+      if (event.detail === 0) {
+        state.focused = index;
+        updatePile(state);
+        openRelated(state, index, true);
+        return;
+      }
       if (lastPointer === 'touch' || lastPointer === 'pen' || !finePointer.matches || reduced.matches) {
-        state.pinned = state.pinned === index ? null : index;
+        if (state.pinned === index) { closeRelated(); return; }
+        state.pinned = index;
         state.focused = null;
         updatePile(state);
+        openRelated(state, index);
       }
     });
     button.addEventListener('focus', () => {
-      if (button.matches(':focus-visible')) { state.focused = index; updatePile(state); }
+      if (restoringSourceFocus) return;
+      if (button.matches(':focus-visible')) {
+        state.focused = index;
+        updatePile(state);
+        openRelated(state, index);
+      }
     });
     button.addEventListener('blur', event => {
-      if (!card.contains(event.relatedTarget)) { state.focused = null; updatePile(state); }
+      if (!card.contains(event.relatedTarget)) { state.focused = null; updatePile(state); scheduleRelatedClose(); }
     });
     retry.addEventListener('focus', () => { state.focused = index; updatePile(state); });
     retry.addEventListener('blur', event => {
@@ -123,6 +180,8 @@ for (const [groupIndex, group] of groups.entries()) {
 
   pile.addEventListener('pointermove', event => {
     if (event.pointerType !== 'mouse' || !finePointer.matches || reduced.matches || drag?.started) return;
+    state.pinned = null;
+    state.focused = null;
     const x = event.clientX - state.rect.left;
     const y = event.clientY - state.rect.top;
     let nearest = -1;
@@ -141,8 +200,215 @@ for (const [groupIndex, group] of groups.entries()) {
     state.hover = distance < 150 ? nearest : null;
     state.intensity = clamp((150 - distance) / 100, 0, 1);
     updatePile(state);
+    if (hit !== -1) requestRelated(state, hit, event);
   });
-  pile.addEventListener('pointerleave', () => { state.hover = null; updatePile(state); });
+  pile.addEventListener('pointerleave', event => {
+    state.hover = null;
+    if (related.owner === state) related.pointerInside = relatedPanel.contains(event.relatedTarget) || inRelatedCorridor(event.clientX, event.clientY);
+    updatePile(state);
+    scheduleRelatedClose();
+  });
+}
+
+document.addEventListener('pointermove', event => {
+  if (!related.owner || event.pointerType !== 'mouse') return;
+  if (related.nextSource && !related.nextSource.pile.cards[related.nextSource.index].card.contains(event.target)) cancelRelatedSwitch();
+  const inside = relatedPanel.contains(event.target) || related.owner.cards[related.index].card.contains(event.target) || inRelatedCorridor(event.clientX, event.clientY);
+  if (inside) clearTimeout(related.timer);
+  else if (related.pointerInside) scheduleRelatedClose();
+  related.pointerInside = inside;
+}, { passive: true });
+
+function cancelRelatedSwitch() {
+  clearTimeout(related.switchTimer);
+  related.nextSource = null;
+}
+
+function inRelatedCorridor(x, y) {
+  const area = related.corridor;
+  return area && x >= area.left && x <= area.right && y >= area.top && y <= area.bottom;
+}
+
+function requestRelated(pile, index, event) {
+  if (!related.owner || (related.owner === pile && related.index === index)) {
+    cancelRelatedSwitch();
+    openRelated(pile, index);
+    return;
+  }
+  if (inRelatedCorridor(event.clientX, event.clientY)) {
+    cancelRelatedSwitch();
+    clearTimeout(related.timer);
+    return;
+  }
+  if (related.nextSource?.pile === pile && related.nextSource.index === index) return;
+  cancelRelatedSwitch();
+  related.nextSource = { pile, index };
+  // Let the pointer cross neighbouring cards on its way into the open group.
+  related.switchTimer = setTimeout(() => {
+    openRelated(pile, index);
+    related.pointerInside = true;
+  }, relatedDuration);
+}
+
+function clearRelatedCards() {
+  clearTimeout(related.timer);
+  clearTimeout(related.loadTimer);
+  related.animation?.cancel();
+  related.players.forEach(player => player.suspend());
+  related.players = [];
+  relatedPanel.querySelector('.related-grid').replaceChildren();
+}
+
+function openRelated(pile, index, focusFirst = false) {
+  cancelRelatedSwitch();
+  clearTimeout(related.timer);
+  const source = pile.cards[index];
+  if (related.owner !== pile || related.index !== index) {
+    const previous = related.owner;
+    if (previous) previous.cards[related.index].button.setAttribute('aria-expanded', 'false');
+    clearRelatedCards();
+    related.owner = pile;
+    related.index = index;
+    related.pointerInside = false;
+    source.button.setAttribute('aria-expanded', 'true');
+    relatedPanel.querySelector('.related-caption').textContent = `${source.clip.label} · ${source.clip.related.length} видео`;
+    for (const [childIndex, clip] of source.clip.related.entries()) {
+      // Reuse at most eight decoders when the pointer switches between sources.
+      let child = related.cards[childIndex];
+      if (!child) {
+        child = createVideoCard(clip, childIndex, true);
+        related.cards.push(child);
+        child.button.addEventListener('click', () => {
+          const active = child.button.getAttribute('aria-pressed') !== 'true';
+          relatedPanel.querySelectorAll('.related-clip').forEach(card => {
+            card.dataset.active = 'false';
+            card.querySelector('.clip-preview').setAttribute('aria-pressed', 'false');
+          });
+          child.card.dataset.active = String(active);
+          child.button.setAttribute('aria-pressed', String(active));
+        });
+      }
+      const { player } = child;
+      if (player.clip.src !== clip.src) {
+        player.loaded = false;
+        player.phaseApplied = false;
+        player.startReady = clip.phase === 0;
+        player.setProblem(null);
+      } else if (player.loaded) player.startReady = true;
+      player.clip = clip;
+      child.card.id = clip.id;
+      child.card.dataset.active = 'false';
+      child.button.setAttribute('aria-label', `${clip.label}. Увеличить`);
+      child.button.setAttribute('aria-pressed', 'false');
+      player.video.poster = clip.poster;
+      child.card.style.setProperty('--related-tilt', `${[-3, 2, -2, 3][childIndex % 4]}deg`);
+      relatedPanel.querySelector('.related-grid').append(child.card);
+      related.players.push(player);
+    }
+    relatedPanel.hidden = false;
+    // Avoid starting decoders for groups the pointer only passes over.
+    related.loadTimer = setTimeout(() => {
+      related.players.forEach(player => visibility.observe(player.video));
+    }, relatedDelay);
+    updatePile(pile);
+    if (previous && previous !== pile) updatePile(previous);
+    positionRelated();
+    if (!reduced.matches && finePointer.matches) {
+      related.animation = relatedPanel.animate([
+        { opacity: 0, transform: 'scale(.35)' },
+        { opacity: 1, transform: 'scale(1)' },
+      ], { duration: relatedDuration, easing: relatedEasing });
+    }
+  }
+  if (focusFirst) relatedPanel.querySelector('.clip-preview').focus({ preventScroll: true });
+}
+
+function closeRelated(restoreFocus = false) {
+  cancelRelatedSwitch();
+  const owner = related.owner;
+  if (!owner) return;
+  const source = owner.cards[related.index];
+  source.button.setAttribute('aria-expanded', 'false');
+  clearRelatedCards();
+  related.owner = null;
+  related.index = null;
+  related.pointerInside = false;
+  related.corridor = null;
+  relatedPanel.hidden = true;
+  owner.hover = null;
+  owner.pinned = null;
+  owner.focused = null;
+  updatePile(owner);
+  if (restoreFocus) {
+    restoringSourceFocus = true;
+    source.button.focus({ preventScroll: true });
+    restoringSourceFocus = false;
+  }
+}
+
+function scheduleRelatedClose() {
+  clearTimeout(related.timer);
+  related.timer = setTimeout(() => {
+    if (!related.owner || related.owner.pinned !== null || related.pointerInside ||
+        relatedPanel.querySelector(':focus-visible') ||
+        related.owner.cards[related.index].button.matches(':focus-visible')) return;
+    closeRelated();
+  }, relatedDuration);
+}
+
+function positionRelated() {
+  const owner = related.owner;
+  if (!owner) return;
+  const source = owner.cards[related.index];
+  const [x, y, scale] = source.target;
+  const anchor = {
+    x: owner.rect.left + x + source.width / 2,
+    y: owner.rect.top + y + source.height / 2,
+    width: source.width * scale,
+    height: source.height * scale,
+  };
+  const margin = 12;
+  const tray = $('.answer-tray');
+  const bottom = getComputedStyle(tray).position === 'fixed' ? tray.getBoundingClientRect().top - margin : innerHeight - margin;
+  if (anchor.y + anchor.height / 2 < 0 || anchor.y - anchor.height / 2 > bottom) { closeRelated(); return; }
+  const columns = innerWidth < 600 ? 2 : Math.ceil(source.clip.related.length / 2);
+  relatedPanel.style.setProperty('--related-columns', columns);
+  relatedPanel.style.width = `${Math.min(innerWidth - margin * 2, columns * 144 + 40)}px`;
+  relatedPanel.style.maxHeight = `${Math.max(44, bottom - margin)}px`;
+  const box = relatedPanel.getBoundingClientRect();
+  let left = anchor.x + anchor.width / 2 + margin;
+  let top = anchor.y - box.height / 2;
+  if (left + box.width > innerWidth - margin) left = anchor.x - anchor.width / 2 - margin - box.width;
+  if (left < margin) {
+    left = anchor.x - box.width / 2;
+    top = anchor.y - anchor.height / 2 - margin - box.height;
+    if (top < margin) top = anchor.y + anchor.height / 2 + margin;
+  }
+  left = clamp(left, margin, innerWidth - margin - box.width);
+  top = clamp(top, margin, Math.max(margin, bottom - box.height));
+  relatedPanel.style.left = `${left}px`;
+  relatedPanel.style.top = `${top}px`;
+  relatedPanel.style.transformOrigin = `${anchor.x - left}px ${anchor.y - top}px`;
+  const sourceLeft = anchor.x - anchor.width / 2;
+  const sourceRight = anchor.x + anchor.width / 2;
+  const sourceTop = anchor.y - anchor.height / 2;
+  const sourceBottom = anchor.y + anchor.height / 2;
+  // Keep the narrow gap interactive so crossing another card cannot change owner.
+  if (left >= sourceRight || left + box.width <= sourceLeft) {
+    related.corridor = {
+      left: Math.min(sourceRight, left + box.width) - 4,
+      right: Math.max(sourceLeft, left) + 4,
+      top: Math.min(sourceTop, top),
+      bottom: Math.max(sourceBottom, top + box.height),
+    };
+  } else if (top >= sourceBottom || top + box.height <= sourceTop) {
+    related.corridor = {
+      left: Math.min(sourceLeft, left),
+      right: Math.max(sourceRight, left + box.width),
+      top: Math.min(sourceBottom, top + box.height) - 4,
+      bottom: Math.max(sourceTop, top) + 4,
+    };
+  } else related.corridor = null;
 }
 
 for (const emotion of emotions) {
@@ -218,7 +484,10 @@ $('#reset').addEventListener('click', () => {
 });
 
 document.addEventListener('pointerdown', event => {
+  const inRelated = relatedPanel.contains(event.target);
+  if (!inRelated && !event.target.closest('.clip')) closeRelated();
   for (const pile of piles) {
+    if (inRelated && related.owner === pile) continue;
     if (!pile.element.contains(event.target) || !event.target.closest('.clip')) {
       pile.pinned = null;
       pile.focused = null;
@@ -296,9 +565,11 @@ document.addEventListener('pointerup', event => {
 });
 document.addEventListener('pointercancel', () => finishDrag(false));
 document.addEventListener('lostpointercapture', event => { if (drag?.pointer === event.pointerId) finishDrag(false); });
-addEventListener('blur', () => finishDrag(false));
+addEventListener('blur', () => { finishDrag(false); closeRelated(); });
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
+  const restore = relatedPanel.contains(document.activeElement);
+  closeRelated(restore);
   finishDrag(false);
   selected = null;
   renderAnswers();
@@ -325,11 +596,12 @@ function measurePile(pile) {
     card.current = null;
   });
   updatePile(pile);
+  if (related.owner === pile) positionRelated();
 }
 
 function updatePile(pile) {
-  const active = pile.focused ?? pile.pinned ?? pile.hover;
-  const amount = pile.focused !== null || pile.pinned !== null ? 1 : pile.intensity;
+  const active = pile.focused ?? pile.pinned ?? (related.owner === pile ? related.index : pile.hover);
+  const amount = pile.focused !== null || pile.pinned !== null || related.owner === pile ? 1 : pile.intensity;
   const scale = active === null ? 1 : 1 + .8 * amount;
   const focus = active === null ? null : pile.cards[active];
   let focusX = focus?.x;
@@ -387,7 +659,10 @@ const resize = new ResizeObserver(entries => {
 });
 for (const pile of piles) resize.observe(pile.element);
 // Scroll changes viewport coordinates without changing the stable card anchors.
-addEventListener('scroll', () => { for (const pile of piles) pile.rect = pile.element.getBoundingClientRect(); }, { passive: true });
+addEventListener('scroll', () => {
+  for (const pile of piles) pile.rect = pile.element.getBoundingClientRect();
+  positionRelated();
+}, { passive: true });
 
 function syncPlayer(player) {
   const shouldPlay = !paused && !document.hidden && player.visible && player.startReady;
@@ -428,11 +703,11 @@ const visibility = new IntersectionObserver(entries => {
 players.forEach(player => visibility.observe(player.video));
 $('#playback').addEventListener('click', () => { paused = !paused; syncPlayback(); });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) finishDrag(false);
+  if (document.hidden) { finishDrag(false); closeRelated(); }
   syncPlayback();
 });
 reduced.addEventListener('change', () => {
-  if (reduced.matches) paused = true;
+  if (reduced.matches) { paused = true; related.animation?.cancel(); }
   for (const pile of piles) { pile.hover = null; updatePile(pile); }
   syncPlayback();
 });

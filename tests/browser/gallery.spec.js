@@ -5,7 +5,7 @@ import { createServer, request as proxyRequest } from 'node:http';
 test.beforeEach(async ({ page }) => {
   page.runtimeErrors = [];
   page.on('pageerror', error => page.runtimeErrors.push(error.message));
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.bringToFront();
   expect(await page.evaluate(() => document.hidden)).toBe(false);
   await expect(page.locator('.clip-preview')).toHaveCount(32);
@@ -31,7 +31,7 @@ test('selection, replacement, swapping, completion and reset', async ({ page }) 
   await page.locator('.emotion[data-emotion="arousal"]').click();
   await slots.nth(3).click();
   await expect(page.locator('#progress')).toHaveText('Все варианты распределены');
-  await page.reload();
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('#progress')).toHaveText('Распределено 0 из 4');
   await page.locator('.emotion[data-emotion="fear"]').click();
   await slots.nth(0).click();
@@ -114,7 +114,7 @@ test('responsive widths, target sizes, text zoom and accessibility', async ({ pa
 
 test('reduced motion starts paused and supports explicit inspection', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.reload();
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.locator('#playback')).toHaveText('Включить видео');
   expect(await page.locator('video').evaluateAll(videos => videos.every(video => video.paused))).toBe(true);
   const card = page.locator('#clip-1-1 .clip-preview');
@@ -127,12 +127,12 @@ test('reduced motion starts paused and supports explicit inspection', async ({ p
 test('mobile tap, fixed tray and touch transfer', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
-  await page.goto('http://127.0.0.1:4173');
+  await page.goto('http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
   await page.bringToFront();
   const card = page.locator('#clip-1-2 .clip-preview');
   await card.tap();
   await expect(card).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('h1').tap();
+  await page.touchscreen.tap(8, 8);
   await expect(card).toHaveAttribute('aria-pressed', 'false');
   await page.locator('.emotion[data-emotion="fear"]').tap();
   await page.locator('.slot').first().tap();
@@ -141,6 +141,83 @@ test('mobile tap, fixed tray and touch transfer', async ({ browser }) => {
   await page.locator('.emotion[data-emotion="love"]').tap();
   await page.locator('.slot').last().tap();
   await expect(page.locator('.slot').last()).toHaveAttribute('data-emotion', 'love');
+  await context.close();
+});
+
+test('each original clip reveals its own related group without moving slots', async ({ page }) => {
+  const panel = page.locator('#related-videos');
+  await expect(panel).toBeHidden();
+  await expect(page.locator('.gallery .clip')).toHaveCount(32);
+  const before = await page.locator('.slot').first().boundingBox();
+  for (const [source, count] of [['#clip-1-1', 4], ['#clip-1-5', 8]]) {
+    await page.locator(`${source} .clip-preview`).focus();
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.related-clip')).toHaveCount(count);
+    await expect(page.locator(`${source} .clip-preview`)).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.gallery .clip')).toHaveCount(32);
+    expect((await page.locator('.slot').first().boundingBox()).y).toBe(before.y);
+    await page.keyboard.press('Enter');
+    await expect(panel.locator('.clip-preview').first()).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(page.locator(`${source} .clip-preview`)).toBeFocused();
+    await expect(page.locator('video')).toHaveCount(32);
+  }
+  await page.locator('#clip-1-5 .clip-preview').focus();
+  const accessibility = await new AxeBuilder({ page }).include('#related-videos').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+  expect(accessibility.violations).toEqual([]);
+});
+
+test('related group remains available when the pointer enters it and closes on exit', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  const source = page.locator('#clip-1-2 .clip-preview');
+  const panel = page.locator('#related-videos');
+  await source.hover();
+  await expect(panel.locator('.related-clip')).toHaveCount(5);
+  await page.waitForTimeout(300);
+  const origin = await source.boundingBox();
+  const child = await panel.locator('.clip-preview').first().boundingBox();
+  for (let step = 1; step <= 12; step++) {
+    const t = step / 12;
+    await page.mouse.move(origin.x + origin.width / 2 + (child.x + child.width / 2 - origin.x - origin.width / 2) * t, origin.y + origin.height / 2 + (child.y + child.height / 2 - origin.y - origin.height / 2) * t);
+    await page.waitForTimeout(25);
+  }
+  await page.waitForTimeout(350);
+  await expect(panel).toBeVisible();
+  await expect(panel.locator('.related-caption')).toContainText('Видео 02');
+  await expect(page.locator('#related-videos:visible')).toHaveCount(1);
+  await page.mouse.move(5, 5);
+  await expect(panel).toBeHidden();
+  await expect(source).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('video')).toHaveCount(32);
+});
+
+test('related groups stay inside the mobile viewport and respect video pause', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  const page = await context.newPage();
+  await page.goto('http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
+  await page.bringToFront();
+  await page.locator('#playback').tap();
+  for (const width of [280, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const source = page.locator('#clip-1-5 .clip-preview');
+    await source.scrollIntoViewIfNeeded();
+    await source.tap();
+    const panel = page.locator('#related-videos');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.related-clip')).toHaveCount(8);
+    const box = await panel.boundingBox();
+    const tray = await page.locator('.answer-tray').boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(box.y + box.height).toBeLessThanOrEqual(tray.y);
+    expect(await panel.locator('video').evaluateAll(videos => videos.every(video => video.paused))).toBe(true);
+    await panel.locator('.clip-preview').last().focus();
+    await expect(panel.locator('.related-close')).toBeInViewport();
+    const close = await panel.locator('.related-close').boundingBox();
+    await page.touchscreen.tap(close.x + close.width / 2, close.y + close.height / 2);
+    await expect(panel).toBeHidden();
+  }
   await context.close();
 });
 
@@ -154,7 +231,7 @@ test('media loads as silent looping video and errors offer retry', async ({ page
   const mediaPage = await browser.newPage();
   const mediaErrors = [];
   mediaPage.on('pageerror', error => mediaErrors.push(error.message));
-  await mediaPage.goto('http://127.0.0.1:4173');
+  await mediaPage.goto('http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
   await mediaPage.bringToFront();
   const video = mediaPage.locator('video').first();
   await expect.poll(() => video.evaluate(node => node.readyState), { timeout: 15000 }).toBeGreaterThanOrEqual(2);
@@ -179,7 +256,7 @@ test('media loads as silent looping video and errors offer retry', async ({ page
   });
   await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
   try {
-    await broken.goto(`http://127.0.0.1:${proxy.address().port}`);
+    await broken.goto(`http://127.0.0.1:${proxy.address().port}`, { waitUntil: 'domcontentloaded' });
     await broken.bringToFront();
     expect(await broken.evaluate(() => document.hidden)).toBe(false);
     const retry = broken.locator('#clip-1-1 .clip-retry');
@@ -201,7 +278,7 @@ test('touch drag and automatic edge scrolling', async ({ browser, browserName })
   test.skip(browserName !== 'chromium', 'Touch movement injection uses Chromium CDP; tap parity is tested in every engine.');
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
-  await page.goto('http://127.0.0.1:4173');
+  await page.goto('http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
   await page.bringToFront();
   const slot = page.locator('.slot').first();
   await slot.scrollIntoViewIfNeeded();
