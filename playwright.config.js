@@ -5,7 +5,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   timeout: 60000,
-  use: { baseURL: 'http://localhost:4173', viewport: { width: 1440, height: 1000 }, trace: 'retain-on-failure' },
+  use: { baseURL: 'http://127.0.0.1:4173', viewport: { width: 1440, height: 1000 }, trace: 'retain-on-failure' },
   projects: ['chromium', 'firefox', 'webkit'].map(browserName => ({
     name: browserName,
     use: {
@@ -14,5 +14,5 @@ export default defineConfig({
       ...(browserName === 'webkit' ? { launchOptions: { env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !/proxy/i.test(key))) } } : {}),
     },
   })),
-  webServer: { command: 'node scripts/serve.mjs', url: 'http://localhost:4173', reuseExistingServer: !process.env.CI },
+  webServer: { command: 'node scripts/serve.mjs', url: 'http://127.0.0.1:4173', reuseExistingServer: !process.env.CI },
 });

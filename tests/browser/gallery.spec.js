@@ -6,6 +6,8 @@ test.beforeEach(async ({ page }) => {
   page.runtimeErrors = [];
   page.on('pageerror', error => page.runtimeErrors.push(error.message));
   await page.goto('/');
+  await page.bringToFront();
+  expect(await page.evaluate(() => document.hidden)).toBe(false);
   await expect(page.locator('.clip-preview')).toHaveCount(32);
 });
 
@@ -91,9 +93,13 @@ test('all cards can be inspected with keyboard and pause remains authoritative',
 });
 
 test('responsive widths, target sizes, text zoom and accessibility', async ({ page }) => {
+  await page.locator('#playback').click();
   for (const width of [280, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 844 });
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), { message: `No horizontal overflow at ${width}px` }).toBe(true).catch(async error => {
+      console.log(await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth, outside: Array.from(document.querySelectorAll('body *')).filter(node => { const r = node.getBoundingClientRect(); return r.right > innerWidth + 1 || r.left < -1; }).map(node => ({ tag: node.tagName, class: String(node.className), rect: node.getBoundingClientRect().toJSON() })).slice(0, 8) })));
+      throw error;
+    });
     const slots = await page.locator('.slot').evaluateAll(nodes => nodes.map(node => ({ width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height })));
     expect(slots.every(slot => slot.width >= 44 && slot.height >= 44)).toBe(true);
     if (width < 720) expect(await page.locator('.answer-tray').evaluate(node => getComputedStyle(node).position)).toBe('fixed');
@@ -121,7 +127,8 @@ test('reduced motion starts paused and supports explicit inspection', async ({ p
 test('mobile tap, fixed tray and touch transfer', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
-  await page.goto('http://localhost:4173');
+  await page.goto('http://127.0.0.1:4173');
+  await page.bringToFront();
   const card = page.locator('#clip-1-2 .clip-preview');
   await card.tap();
   await expect(card).toHaveAttribute('aria-pressed', 'true');
@@ -147,7 +154,8 @@ test('media loads as silent looping video and errors offer retry', async ({ page
   const mediaPage = await browser.newPage();
   const mediaErrors = [];
   mediaPage.on('pageerror', error => mediaErrors.push(error.message));
-  await mediaPage.goto('http://localhost:4173');
+  await mediaPage.goto('http://127.0.0.1:4173');
+  await mediaPage.bringToFront();
   const video = mediaPage.locator('video').first();
   await expect.poll(() => video.evaluate(node => node.readyState), { timeout: 15000 }).toBeGreaterThanOrEqual(2);
   expect(await video.evaluate(node => node.muted && node.loop && node.hasAttribute('playsinline') && Math.abs(node.duration - 3) < .1)).toBe(true);
@@ -193,7 +201,8 @@ test('touch drag and automatic edge scrolling', async ({ browser, browserName })
   test.skip(browserName !== 'chromium', 'Touch movement injection uses Chromium CDP; tap parity is tested in every engine.');
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
-  await page.goto('http://localhost:4173');
+  await page.goto('http://127.0.0.1:4173');
+  await page.bringToFront();
   const slot = page.locator('.slot').first();
   await slot.scrollIntoViewIfNeeded();
   const source = await page.locator('.emotion[data-emotion="fear"]').boundingBox();

@@ -28,7 +28,7 @@ h1 { max-inline-size: 22ch; font-size: var(--text-title); line-height: var(--lin
 .group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); padding-block: var(--space-3); border-block-end: var(--border-width) solid var(--border-subtle); }
 .group-heading h2 { font-size: var(--text-small); font-weight: 550; letter-spacing: var(--tracking-label); }
 .group-count { font-size: var(--text-tiny); color: var(--text-secondary); }
-.pile { position: relative; block-size: var(--pile-height); max-inline-size: var(--pile-max-width); margin-inline: auto; isolation: isolate; }
+.pile { position: relative; block-size: var(--pile-height); max-inline-size: var(--pile-max-width); margin-inline: auto; isolation: isolate; overflow: clip; }
 .clip { position: absolute; inset-block-start: 0; inset-inline-start: 0; inline-size: clamp(var(--clip-min-width), 28%, var(--clip-max-width)); aspect-ratio: var(--clip-aspect-ratio); transform-origin: center; border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
 .clip[data-active="true"] { box-shadow: var(--shadow-active); }
 .clip-preview { position: absolute; inset: 0; display: block; inline-size: 100%; block-size: 100%; padding: 0; overflow: hidden; border: var(--border-width) solid var(--surface-panel); border-radius: inherit; background: var(--surface-card); }
@@ -58,6 +58,7 @@ main { padding-block-end: var(--tray-clearance); }
 .emotion-cell { min-inline-size: 0; }
 .emotion { display: flex; justify-content: center; align-items: center; gap: var(--space-2); inline-size: 100%; min-block-size: var(--control-height); padding: var(--space-2) var(--space-3); background: var(--surface-page); border: var(--border-width) solid var(--border-control); border-radius: var(--radius-control); font-size: var(--text-small); font-weight: 500; touch-action: none; transition: background var(--duration-fast) var(--ease-out); }
 .emotion:hover { background: var(--surface-hover); }
+.emotion > span { min-inline-size: 0; overflow-wrap: anywhere; }
 .emotion[aria-pressed="true"], .emotion:active { background: var(--action-primary); border-color: var(--action-primary); color: var(--text-inverse); }
 .grip { display: none; flex: none; inline-size: var(--icon-size); block-size: var(--icon-size); opacity: var(--opacity-muted); }
 .emotion-location { display: grid; place-content: center; min-block-size: var(--control-height); text-align: center; font-size: var(--text-tiny); color: var(--text-secondary); }
