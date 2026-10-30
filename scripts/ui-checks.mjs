@@ -19,7 +19,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 await page.goto('http://localhost:4173');
 await page.locator('.clip-preview').last().waitFor();
 await page.screenshot({ path: 'artifacts/desktop.png', fullPage: true });
-await page.locator('#clip-1-2 .clip-preview').focus();
+await page.locator('#clip-1-2 .clip-preview').click();
 await page.waitForTimeout(350);
 await page.screenshot({ path: 'artifacts/desktop-inspect.png', fullPage: true });
 const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });

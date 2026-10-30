@@ -15,12 +15,10 @@ let drag = null;
 let suppressClick = false;
 const players = [];
 const piles = [];
-const related = { owner: null, index: null, cards: [], players: [], timer: null, loadTimer: null, switchTimer: null, nextSource: null, animation: null, pointerInside: false, corridor: null };
+const related = { owner: null, index: null, cards: [], players: [], animation: null };
 const motionStyle = getComputedStyle(document.documentElement);
-const relatedDelay = parseFloat(motionStyle.getPropertyValue('--duration-fast'));
 const relatedDuration = parseFloat(motionStyle.getPropertyValue('--duration-base'));
 const relatedEasing = motionStyle.getPropertyValue('--ease-out').trim();
-let restoringSourceFocus = false;
 const relatedPanel = document.createElement('section');
 relatedPanel.id = 'related-videos';
 relatedPanel.className = 'related-popover';
@@ -29,21 +27,7 @@ relatedPanel.setAttribute('aria-labelledby', 'related-title');
 relatedPanel.innerHTML = '<header class="related-heading"><div><h2 id="related-title">Связанные видео</h2><p class="related-caption"></p></div><button class="related-close quiet-button" type="button" aria-label="Закрыть связанные видео"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></header><div class="related-grid"></div>';
 document.body.append(relatedPanel);
 relatedPanel.querySelector('.related-close').addEventListener('click', () => closeRelated(true));
-relatedPanel.addEventListener('pointerenter', () => {
-  related.pointerInside = true;
-  clearTimeout(related.timer);
-  cancelRelatedSwitch();
-});
-relatedPanel.addEventListener('pointerleave', event => {
-  if (event.pointerType !== 'mouse') return;
-  related.pointerInside = Boolean(related.owner?.cards[related.index].card.contains(event.relatedTarget)) || inRelatedCorridor(event.clientX, event.clientY);
-  if (!related.pointerInside) scheduleRelatedClose();
-});
-relatedPanel.addEventListener('focusin', () => {
-  clearTimeout(related.timer);
-  related.animation?.finish();
-});
-relatedPanel.addEventListener('focusout', event => { if (!relatedPanel.contains(event.relatedTarget)) scheduleRelatedClose(); });
+relatedPanel.addEventListener('focusin', () => related.animation?.finish());
 const grip = '<svg class="grip" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1"/><circle cx="11" cy="4" r="1"/><circle cx="5" cy="8" r="1"/><circle cx="11" cy="8" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="11" cy="12" r="1"/></svg>';
 const playIcon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m7 4 9 6-9 6Z"/></svg>';
 const retryIcon = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M16 6a7 7 0 1 0 1 7M16 2v5h-5"/></svg>';
@@ -144,33 +128,21 @@ for (const [groupIndex, group] of groups.entries()) {
     button.setAttribute('aria-controls', 'related-videos');
     const geometry = { card, button, clip, x: 0, y: 0, width: 0, height: 0, current: null, target: null };
     state.cards.push(geometry);
-    let lastPointer = 'mouse';
-    button.addEventListener('pointerdown', event => { lastPointer = event.pointerType; });
     button.addEventListener('click', event => {
-      if (event.detail === 0) {
-        state.focused = index;
-        updatePile(state);
-        openRelated(state, index, true);
-        return;
-      }
-      if (lastPointer === 'touch' || lastPointer === 'pen' || !finePointer.matches || reduced.matches) {
-        if (state.pinned === index) { closeRelated(); return; }
-        state.pinned = index;
-        state.focused = null;
-        updatePile(state);
-        openRelated(state, index);
-      }
+      if (related.owner === state && related.index === index) { closeRelated(); return; }
+      state.pinned = index;
+      state.focused = null;
+      updatePile(state);
+      openRelated(state, index, event.detail === 0);
     });
     button.addEventListener('focus', () => {
-      if (restoringSourceFocus) return;
       if (button.matches(':focus-visible')) {
         state.focused = index;
         updatePile(state);
-        openRelated(state, index);
       }
     });
     button.addEventListener('blur', event => {
-      if (!card.contains(event.relatedTarget)) { state.focused = null; updatePile(state); scheduleRelatedClose(); }
+      if (!card.contains(event.relatedTarget)) { state.focused = null; updatePile(state); }
     });
     retry.addEventListener('focus', () => { state.focused = index; updatePile(state); });
     retry.addEventListener('blur', event => {
@@ -180,7 +152,6 @@ for (const [groupIndex, group] of groups.entries()) {
 
   pile.addEventListener('pointermove', event => {
     if (event.pointerType !== 'mouse' || !finePointer.matches || reduced.matches || drag?.started) return;
-    state.pinned = null;
     state.focused = null;
     const x = event.clientX - state.rect.left;
     const y = event.clientY - state.rect.top;
@@ -200,59 +171,11 @@ for (const [groupIndex, group] of groups.entries()) {
     state.hover = distance < 150 ? nearest : null;
     state.intensity = clamp((150 - distance) / 100, 0, 1);
     updatePile(state);
-    if (hit !== -1) requestRelated(state, hit, event);
   });
-  pile.addEventListener('pointerleave', event => {
-    state.hover = null;
-    if (related.owner === state) related.pointerInside = relatedPanel.contains(event.relatedTarget) || inRelatedCorridor(event.clientX, event.clientY);
-    updatePile(state);
-    scheduleRelatedClose();
-  });
-}
-
-document.addEventListener('pointermove', event => {
-  if (!related.owner || event.pointerType !== 'mouse') return;
-  if (related.nextSource && !related.nextSource.pile.cards[related.nextSource.index].card.contains(event.target)) cancelRelatedSwitch();
-  const inside = relatedPanel.contains(event.target) || related.owner.cards[related.index].card.contains(event.target) || inRelatedCorridor(event.clientX, event.clientY);
-  if (inside) clearTimeout(related.timer);
-  else if (related.pointerInside) scheduleRelatedClose();
-  related.pointerInside = inside;
-}, { passive: true });
-
-function cancelRelatedSwitch() {
-  clearTimeout(related.switchTimer);
-  related.nextSource = null;
-}
-
-function inRelatedCorridor(x, y) {
-  const area = related.corridor;
-  return area && x >= area.left && x <= area.right && y >= area.top && y <= area.bottom;
-}
-
-function requestRelated(pile, index, event) {
-  if (!related.owner || (related.owner === pile && related.index === index)) {
-    cancelRelatedSwitch();
-    openRelated(pile, index);
-    return;
-  }
-  if (inRelatedCorridor(event.clientX, event.clientY)) {
-    cancelRelatedSwitch();
-    clearTimeout(related.timer);
-    return;
-  }
-  if (related.nextSource?.pile === pile && related.nextSource.index === index) return;
-  cancelRelatedSwitch();
-  related.nextSource = { pile, index };
-  // Let the pointer cross neighbouring cards on its way into the open group.
-  related.switchTimer = setTimeout(() => {
-    openRelated(pile, index);
-    related.pointerInside = true;
-  }, relatedDuration);
+  pile.addEventListener('pointerleave', () => { state.hover = null; updatePile(state); });
 }
 
 function clearRelatedCards() {
-  clearTimeout(related.timer);
-  clearTimeout(related.loadTimer);
   related.animation?.cancel();
   related.players.forEach(player => player.suspend());
   related.players = [];
@@ -260,8 +183,6 @@ function clearRelatedCards() {
 }
 
 function openRelated(pile, index, focusFirst = false) {
-  cancelRelatedSwitch();
-  clearTimeout(related.timer);
   const source = pile.cards[index];
   if (related.owner !== pile || related.index !== index) {
     const previous = related.owner;
@@ -269,7 +190,6 @@ function openRelated(pile, index, focusFirst = false) {
     clearRelatedCards();
     related.owner = pile;
     related.index = index;
-    related.pointerInside = false;
     source.button.setAttribute('aria-expanded', 'true');
     relatedPanel.querySelector('.related-caption').textContent = `${source.clip.label} · ${source.clip.related.length} видео`;
     for (const [childIndex, clip] of source.clip.related.entries()) {
@@ -306,12 +226,9 @@ function openRelated(pile, index, focusFirst = false) {
       related.players.push(player);
     }
     relatedPanel.hidden = false;
-    // Avoid starting decoders for groups the pointer only passes over.
-    related.loadTimer = setTimeout(() => {
-      related.players.forEach(player => visibility.observe(player.video));
-    }, relatedDelay);
+    related.players.forEach(player => visibility.observe(player.video));
     updatePile(pile);
-    if (previous && previous !== pile) updatePile(previous);
+    if (previous && previous !== pile) { previous.pinned = null; updatePile(previous); }
     positionRelated();
     if (!reduced.matches && finePointer.matches) {
       related.animation = relatedPanel.animate([
@@ -324,7 +241,6 @@ function openRelated(pile, index, focusFirst = false) {
 }
 
 function closeRelated(restoreFocus = false) {
-  cancelRelatedSwitch();
   const owner = related.owner;
   if (!owner) return;
   const source = owner.cards[related.index];
@@ -332,28 +248,12 @@ function closeRelated(restoreFocus = false) {
   clearRelatedCards();
   related.owner = null;
   related.index = null;
-  related.pointerInside = false;
-  related.corridor = null;
   relatedPanel.hidden = true;
   owner.hover = null;
   owner.pinned = null;
   owner.focused = null;
   updatePile(owner);
-  if (restoreFocus) {
-    restoringSourceFocus = true;
-    source.button.focus({ preventScroll: true });
-    restoringSourceFocus = false;
-  }
-}
-
-function scheduleRelatedClose() {
-  clearTimeout(related.timer);
-  related.timer = setTimeout(() => {
-    if (!related.owner || related.owner.pinned !== null || related.pointerInside ||
-        relatedPanel.querySelector(':focus-visible') ||
-        related.owner.cards[related.index].button.matches(':focus-visible')) return;
-    closeRelated();
-  }, relatedDuration);
+  if (restoreFocus) source.button.focus({ preventScroll: true });
 }
 
 function positionRelated() {
@@ -389,26 +289,6 @@ function positionRelated() {
   relatedPanel.style.left = `${left}px`;
   relatedPanel.style.top = `${top}px`;
   relatedPanel.style.transformOrigin = `${anchor.x - left}px ${anchor.y - top}px`;
-  const sourceLeft = anchor.x - anchor.width / 2;
-  const sourceRight = anchor.x + anchor.width / 2;
-  const sourceTop = anchor.y - anchor.height / 2;
-  const sourceBottom = anchor.y + anchor.height / 2;
-  // Keep the narrow gap interactive so crossing another card cannot change owner.
-  if (left >= sourceRight || left + box.width <= sourceLeft) {
-    related.corridor = {
-      left: Math.min(sourceRight, left + box.width) - 4,
-      right: Math.max(sourceLeft, left) + 4,
-      top: Math.min(sourceTop, top),
-      bottom: Math.max(sourceBottom, top + box.height),
-    };
-  } else if (top >= sourceBottom || top + box.height <= sourceTop) {
-    related.corridor = {
-      left: Math.min(sourceLeft, left),
-      right: Math.max(sourceRight, left + box.width),
-      top: Math.min(sourceBottom, top + box.height) - 4,
-      bottom: Math.max(sourceTop, top) + 4,
-    };
-  } else related.corridor = null;
 }
 
 for (const emotion of emotions) {
@@ -600,8 +480,8 @@ function measurePile(pile) {
 }
 
 function updatePile(pile) {
-  const active = pile.focused ?? pile.pinned ?? (related.owner === pile ? related.index : pile.hover);
-  const amount = pile.focused !== null || pile.pinned !== null || related.owner === pile ? 1 : pile.intensity;
+  const active = pile.focused ?? pile.hover ?? pile.pinned ?? (related.owner === pile ? related.index : null);
+  const amount = pile.focused === null && pile.hover !== null ? pile.intensity : 1;
   const scale = active === null ? 1 : 1 + .8 * amount;
   const focus = active === null ? null : pile.cards[active];
   let focusX = focus?.x;

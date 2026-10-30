@@ -151,12 +151,14 @@ test('each original clip reveals its own related group without moving slots', as
   const before = await page.locator('.slot').first().boundingBox();
   for (const [source, count] of [['#clip-1-1', 4], ['#clip-1-5', 8]]) {
     await page.locator(`${source} .clip-preview`).focus();
+    await expect(page.locator(`${source} .clip-preview`)).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel).toBeHidden();
+    await page.keyboard.press('Enter');
     await expect(panel).toBeVisible();
     await expect(panel.locator('.related-clip')).toHaveCount(count);
     await expect(page.locator(`${source} .clip-preview`)).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('.gallery .clip')).toHaveCount(32);
     expect((await page.locator('.slot').first().boundingBox()).y).toBe(before.y);
-    await page.keyboard.press('Enter');
     await expect(panel.locator('.clip-preview').first()).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
@@ -164,31 +166,45 @@ test('each original clip reveals its own related group without moving slots', as
     await expect(page.locator('video')).toHaveCount(32);
   }
   await page.locator('#clip-1-5 .clip-preview').focus();
+  await page.keyboard.press('Space');
+  await expect(panel).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).include('#related-videos').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   expect(accessibility.violations).toEqual([]);
+  await page.locator('#clip-4-1 .clip-preview').focus();
+  await page.keyboard.press('Enter');
+  await expect(panel.locator('.related-clip')).toHaveCount(4);
+  await expect(page.locator('#clip-1-5 .clip-preview')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#clip-1-5')).toHaveAttribute('data-active', 'false');
 });
 
-test('related group remains available when the pointer enters it and closes on exit', async ({ page }) => {
+test('hover only enlarges while clicks open, switch and dismiss related groups', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 844 });
   const source = page.locator('#clip-1-2 .clip-preview');
   const panel = page.locator('#related-videos');
   await source.hover();
+  await expect(page.locator('#clip-1-2')).toHaveAttribute('data-active', 'true');
+  await expect(panel).toBeHidden();
+  await expect(source).toHaveAttribute('aria-expanded', 'false');
+  await source.click();
   await expect(panel.locator('.related-clip')).toHaveCount(5);
-  await page.waitForTimeout(300);
-  const origin = await source.boundingBox();
-  const child = await panel.locator('.clip-preview').first().boundingBox();
-  for (let step = 1; step <= 12; step++) {
-    const t = step / 12;
-    await page.mouse.move(origin.x + origin.width / 2 + (child.x + child.width / 2 - origin.x - origin.width / 2) * t, origin.y + origin.height / 2 + (child.y + child.height / 2 - origin.y - origin.height / 2) * t);
-    await page.waitForTimeout(25);
-  }
+  await page.locator('#clip-1-1 .clip-preview').hover();
   await page.waitForTimeout(350);
+  await expect(page.locator('#clip-1-1')).toHaveAttribute('data-active', 'true');
   await expect(panel).toBeVisible();
   await expect(panel.locator('.related-caption')).toContainText('Видео 02');
   await expect(page.locator('#related-videos:visible')).toHaveCount(1);
   await page.mouse.move(5, 5);
-  await expect(panel).toBeHidden();
+  await expect(panel).toBeVisible();
+  const other = page.locator('#clip-4-2 .clip-preview');
+  await other.click();
+  await expect(panel.locator('.related-caption')).toContainText('группа 4');
   await expect(source).toHaveAttribute('aria-expanded', 'false');
+  await other.click();
+  await expect(panel).toBeHidden();
+  await source.click();
+  await expect(panel).toBeVisible();
+  await page.locator('h1').click();
+  await expect(panel).toBeHidden();
   await expect(page.locator('video')).toHaveCount(32);
 });
 
