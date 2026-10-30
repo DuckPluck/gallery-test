@@ -70,6 +70,15 @@ main { padding-block-end: var(--tray-clearance); }
 .skip-link { position: fixed; z-index: 200; inset-block-start: var(--space-2); inset-inline-start: var(--space-2); padding: var(--space-3); background: var(--surface-panel); color: var(--action-primary); transform: translateY(-200%); }
 .skip-link:focus { transform: none; }
 .no-script { padding: var(--space-6); }
+.related-popover { position: fixed; z-index: 40; padding: var(--space-4); overflow: auto; overscroll-behavior: contain; scroll-padding-block: calc(var(--control-height) + var(--space-6)) var(--space-4); border: var(--border-width) solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-panel); box-shadow: var(--shadow-popover); }
+.related-heading { position: sticky; inset-block-start: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-block-end: var(--space-4); background: var(--surface-panel); }
+.related-heading h2 { font-size: var(--text-base); font-weight: 550; }
+.related-caption { margin-block-start: var(--space-1); color: var(--text-secondary); font-size: var(--text-tiny); }
+.related-close { display: grid; flex: none; place-items: center; inline-size: var(--control-height); padding: 0; }
+.related-grid { display: grid; grid-template-columns: repeat(var(--related-columns), minmax(0, 1fr)); gap: var(--space-2); padding: var(--space-2); }
+.related-clip { position: relative; min-inline-size: 0; aspect-ratio: var(--clip-aspect-ratio); transform: rotate(var(--related-tilt)); border-radius: var(--radius-card); box-shadow: var(--shadow-card); transition: transform var(--duration-fast) var(--ease-out); }
+.related-clip[data-active="true"], .related-clip:focus-within { z-index: 2; transform: rotate(0) scale(var(--related-scale)); }
+@media (hover: hover) and (pointer: fine) { .related-clip:hover { z-index: 3; transform: rotate(0) scale(var(--related-scale)); } }
 @media (hover: hover) and (pointer: fine) { .pointer-hint { display: inline; } .touch-hint { display: none; } }
 @media (min-width: 45em) {
   :root { --page-gutter: var(--page-gutter-wide); }
