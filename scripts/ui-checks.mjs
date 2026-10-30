@@ -28,9 +28,6 @@ await mobilePage.goto('http://localhost:4173');
 await mobilePage.locator('.clip-preview').last().waitFor();
 await mobilePage.screenshot({ path: 'artifacts/mobile.png', fullPage: true });
 await mobilePage.screenshot({ path: 'artifacts/mobile-viewport.png' });
-await mobilePage.locator('#clip-1-2 .clip-preview').tap();
-await mobilePage.waitForTimeout(250);
-await mobilePage.screenshot({ path: 'artifacts/mobile-related.png' });
 await browser.close();
 
 const kit = dirname(fileURLToPath(import.meta.resolve('ux-ui-agent-skills/package.json')));
