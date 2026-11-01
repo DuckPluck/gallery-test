@@ -19,7 +19,7 @@ p, h1, h2, h3 { margin: 0; }
 .quiet-button:hover:not(:disabled) { background: var(--surface-hover); }
 .quiet-button:active:not(:disabled) { background: var(--surface-selected); }
 .intro { display: flex; flex-direction: column; gap: var(--space-4); margin-block: var(--space-6) var(--space-5); }
-h1 { max-inline-size: 22ch; font-size: var(--text-title); line-height: var(--line-title); font-weight: 550; letter-spacing: var(--tracking-title); }
+h1 { max-inline-size: 22ch; font-size: var(--text-title); line-height: var(--line-title); font-weight: 550; letter-spacing: var(--tracking-title); overflow-wrap: anywhere; }
 .lead { max-inline-size: 54ch; margin-block-start: var(--space-4); font-size: var(--text-lead); color: var(--text-secondary); }
 .view-hint { font-size: var(--text-small); color: var(--text-secondary); }
 .pointer-hint { display: none; }
