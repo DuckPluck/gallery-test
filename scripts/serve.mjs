@@ -4,7 +4,7 @@ import { stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 
 const root = resolve('site');
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.mp4': 'video/mp4' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.mp4': 'video/mp4' };
 const server = createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
@@ -26,4 +26,4 @@ const server = createServer(async (request, response) => {
     else createReadStream(file, { start, end }).on('error', () => response.destroy()).pipe(response);
   } catch { response.writeHead(404).end(); }
 });
-server.listen(Number(process.env.PORT || 4173), '0.0.0.0', () => console.log('Local: http://localhost:4173'));
+server.listen(Number(process.env.PORT || 4173), '127.0.0.1', () => console.log('Local: http://localhost:4173'));

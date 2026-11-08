@@ -115,7 +115,7 @@ for (const [groupIndex, group] of groups.entries()) {
   const section = document.createElement('section');
   section.className = 'group';
   section.setAttribute('aria-labelledby', `${group.id}-title`);
-  section.innerHTML = `<div class="group-heading"><h2 id="${group.id}-title">${group.label}</h2><span class="group-count">8 видео</span></div><div class="pile" data-group="${groupIndex}"></div><button class="slot" data-slot="${groupIndex}" type="button" aria-describedby="${group.id}-title" aria-pressed="false"><span class="slot-copy"><span class="slot-caption">Ваш выбор</span><span class="slot-answer">Перенесите эмоцию</span></span><span class="slot-sign" aria-hidden="true">+</span></button>`;
+  section.innerHTML = `<div class="group-heading"><h2 id="${group.id}-title">${group.label}</h2><span class="group-count">${group.videos.length} видео</span></div><div class="pile" data-group="${groupIndex}"></div><button class="slot" data-slot="${groupIndex}" type="button" aria-describedby="${group.id}-title" aria-pressed="false"><span class="slot-copy"><span class="slot-caption">Ваш выбор</span><span class="slot-answer">Перенесите эмоцию</span></span><span class="slot-sign" aria-hidden="true">+</span></button>`;
   $('#gallery').append(section);
   const pile = section.querySelector('.pile');
   const state = { element: pile, cards: [], hover: null, pinned: null, focused: null, intensity: 1, width: 0, height: 0, frame: 0, lastTime: 0 };
@@ -193,7 +193,7 @@ function openRelated(pile, index, focusFirst = false) {
     source.button.setAttribute('aria-expanded', 'true');
     relatedPanel.querySelector('.related-caption').textContent = `${source.clip.label} · ${source.clip.related.length} видео`;
     for (const [childIndex, clip] of source.clip.related.entries()) {
-      // Reuse at most eight decoders when the pointer switches between sources.
+      // Reuse the players when switching between source clips.
       let child = related.cards[childIndex];
       if (!child) {
         child = createVideoCard(clip, childIndex, true);
@@ -210,6 +210,8 @@ function openRelated(pile, index, focusFirst = false) {
       }
       const { player } = child;
       if (player.clip.src !== clip.src) {
+        player.video.removeAttribute('src');
+        player.video.load();
         player.loaded = false;
         player.phaseApplied = false;
         player.startReady = clip.phase === 0;
@@ -458,9 +460,9 @@ document.addEventListener('keydown', event => {
 });
 
 const anchors = [
-  [.20, .24, -5], [.51, .22, 3], [.80, .27, 5],
-  [.34, .48, -3], [.68, .51, 4],
-  [.20, .74, -4], [.50, .76, -1], [.81, .73, 5],
+  [.34, .34, -5], [.66, .35, 4],
+  [.34, .65, -4], [.66, .66, 5],
+  [.50, .50, -2],
 ];
 
 function measurePile(pile) {

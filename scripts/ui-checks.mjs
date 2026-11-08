@@ -9,7 +9,15 @@ const [html, theme, styles, state, media, app] = await Promise.all([
   'site/index.html', 'site/theme.css', 'site/styles.css', 'site/state.js', 'site/media.js', 'site/app.js',
 ].map(path => readFile(path, 'utf8')));
 // File-based gates need an inline module because browsers block file imports.
-const code = [state, media, app.replace(/^import .*;\n/gm, '')].join('\n').replace(/^export /gm, '');
+// The fold and motion gates compare layouts from separate page loads.
+const code = [
+  state,
+  'const originalRandom = Math.random;',
+  'Math.random = () => 0.42;',
+  media,
+  'Math.random = originalRandom;',
+  app.replace(/^import .*;\n/gm, ''),
+].join('\n').replace(/^export /gm, '');
 const harness = html.replace('<head>', `<head><base href="${new URL('../site/', import.meta.url).href}">`)
   .replace(/<link rel="stylesheet"[^>]+>/g, '')
   .replace('<script type="module" src="./app.js"></script>', () => `<style>${theme}\n${styles}</style><script type="module">${code}</script>`);

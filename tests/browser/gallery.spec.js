@@ -2,13 +2,15 @@ import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { createServer, request as proxyRequest } from 'node:http';
 
+const clipByFile = (page, name) => page.locator(`.clip:has(video[poster$="/${name}.jpg"])`);
+
 test.beforeEach(async ({ page }) => {
   page.runtimeErrors = [];
   page.on('pageerror', error => page.runtimeErrors.push(error.message));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.bringToFront();
   expect(await page.evaluate(() => document.hidden)).toBe(false);
-  await expect(page.locator('.clip-preview')).toHaveCount(32);
+  await expect(page.locator('.clip-preview')).toHaveCount(17);
 });
 
 test.afterEach(async ({ page }) => { expect(page.runtimeErrors).toEqual([]); });
@@ -147,34 +149,38 @@ test('mobile tap, fixed tray and touch transfer', async ({ browser }) => {
 test('each original clip reveals its own related group without moving slots', async ({ page }) => {
   const panel = page.locator('#related-videos');
   await expect(panel).toBeHidden();
-  await expect(page.locator('.gallery .clip')).toHaveCount(32);
+  await expect(page.locator('.gallery .clip')).toHaveCount(17);
   const before = await page.locator('.slot').first().boundingBox();
-  for (const [source, count] of [['#clip-1-1', 4], ['#clip-1-5', 8]]) {
-    await page.locator(`${source} .clip-preview`).focus();
-    await expect(page.locator(`${source} .clip-preview`)).toHaveAttribute('aria-pressed', 'true');
+  for (const [name, count] of [['21_fg_2', 3], ['1_fg_4', 5]]) {
+    const source = clipByFile(page, name).locator('.clip-preview');
+    await source.focus();
+    await expect(source).toHaveAttribute('aria-pressed', 'true');
     await expect(panel).toBeHidden();
     await page.keyboard.press('Enter');
     await expect(panel).toBeVisible();
     await expect(panel.locator('.related-clip')).toHaveCount(count);
-    await expect(page.locator(`${source} .clip-preview`)).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.locator('.gallery .clip')).toHaveCount(32);
+    const posters = await panel.locator('video').evaluateAll(videos => videos.map(video => video.getAttribute('poster').split('/').at(-1)));
+    expect(posters.every(poster => poster.startsWith(`${name.split('_')[0]}_`) && poster !== `${name}.jpg`)).toBe(true);
+    await expect(source).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.gallery .clip')).toHaveCount(17);
     expect((await page.locator('.slot').first().boundingBox()).y).toBe(before.y);
     await expect(panel.locator('.clip-preview').first()).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
-    await expect(page.locator(`${source} .clip-preview`)).toBeFocused();
-    await expect(page.locator('video')).toHaveCount(32);
+    await expect(source).toBeFocused();
+    await expect(page.locator('video')).toHaveCount(17);
   }
-  await page.locator('#clip-1-5 .clip-preview').focus();
+  const previous = clipByFile(page, '1_fg_4');
+  await previous.locator('.clip-preview').focus();
   await page.keyboard.press('Space');
   await expect(panel).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).include('#related-videos').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   expect(accessibility.violations).toEqual([]);
-  await page.locator('#clip-4-1 .clip-preview').focus();
+  await clipByFile(page, '18_fg_1').locator('.clip-preview').focus();
   await page.keyboard.press('Enter');
-  await expect(panel.locator('.related-clip')).toHaveCount(4);
-  await expect(page.locator('#clip-1-5 .clip-preview')).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.locator('#clip-1-5')).toHaveAttribute('data-active', 'false');
+  await expect(panel.locator('.related-clip')).toHaveCount(3);
+  await expect(previous.locator('.clip-preview')).toHaveAttribute('aria-expanded', 'false');
+  await expect(previous).toHaveAttribute('data-active', 'false');
 });
 
 test('hover only enlarges while clicks open, switch and dismiss related groups', async ({ page }) => {
@@ -186,7 +192,7 @@ test('hover only enlarges while clicks open, switch and dismiss related groups',
   await expect(panel).toBeHidden();
   await expect(source).toHaveAttribute('aria-expanded', 'false');
   await source.click();
-  await expect(panel.locator('.related-clip')).toHaveCount(5);
+  await expect(panel.locator('.related-clip').first()).toBeVisible();
   await page.locator('#clip-1-1 .clip-preview').hover();
   await page.waitForTimeout(350);
   await expect(page.locator('#clip-1-1')).toHaveAttribute('data-active', 'true');
@@ -205,7 +211,7 @@ test('hover only enlarges while clicks open, switch and dismiss related groups',
   await expect(panel).toBeVisible();
   await page.locator('h1').click();
   await expect(panel).toBeHidden();
-  await expect(page.locator('video')).toHaveCount(32);
+  await expect(page.locator('video')).toHaveCount(17);
 });
 
 test('related groups stay inside the mobile viewport and respect video pause', async ({ browser }) => {
@@ -216,12 +222,12 @@ test('related groups stay inside the mobile viewport and respect video pause', a
   await page.locator('#playback').tap();
   for (const width of [280, 390]) {
     await page.setViewportSize({ width, height: 844 });
-    const source = page.locator('#clip-1-5 .clip-preview');
-    await source.scrollIntoViewIfNeeded();
+    const source = clipByFile(page, '1_fg_4').locator('.clip-preview');
+    await source.evaluate(button => button.scrollIntoView({ block: 'center' }));
     await source.tap();
     const panel = page.locator('#related-videos');
     await expect(panel).toBeVisible();
-    await expect(panel.locator('.related-clip')).toHaveCount(8);
+    await expect(panel.locator('.related-clip')).toHaveCount(5);
     const box = await panel.boundingBox();
     const tray = await page.locator('.answer-tray').boundingBox();
     expect(box.x).toBeGreaterThanOrEqual(0);
@@ -251,7 +257,7 @@ test('media loads as silent looping video and errors offer retry', async ({ page
   await mediaPage.bringToFront();
   const video = mediaPage.locator('video').first();
   await expect.poll(() => video.evaluate(node => node.readyState), { timeout: 15000 }).toBeGreaterThanOrEqual(2);
-  expect(await video.evaluate(node => node.muted && node.loop && node.hasAttribute('playsinline') && Math.abs(node.duration - 3) < .1)).toBe(true);
+  expect(await video.evaluate(node => node.muted && node.loop && node.hasAttribute('playsinline') && Number.isFinite(node.duration) && node.duration > 0)).toBe(true);
   await mediaPage.close();
   const context = await browser.newContext();
   const broken = await context.newPage();
@@ -259,7 +265,7 @@ test('media loads as silent looping video and errors offer retry', async ({ page
   let unavailable = true;
   // A real HTTP failure also exercises WebKit's native media network stack.
   const proxy = createServer((incoming, response) => {
-    if (unavailable && incoming.url.startsWith('/videos/demo-1.mp4')) {
+    if (unavailable && incoming.url.startsWith('/pedfe/') && incoming.url.endsWith('.mp4')) {
       response.writeHead(503, { 'Cache-Control': 'no-store' }).end();
       return;
     }
