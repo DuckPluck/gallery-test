@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.bringToFront();
   expect(await page.evaluate(() => document.hidden)).toBe(false);
-  await expect(page.locator('.clip-preview')).toHaveCount(17);
+  await expect(page.locator('.clip-preview')).toHaveCount(16);
 });
 
 test.afterEach(async ({ page }) => { expect(page.runtimeErrors).toEqual([]); });
@@ -149,7 +149,7 @@ test('mobile tap, fixed tray and touch transfer', async ({ browser }) => {
 test('each original clip reveals its own related group without moving slots', async ({ page }) => {
   const panel = page.locator('#related-videos');
   await expect(panel).toBeHidden();
-  await expect(page.locator('.gallery .clip')).toHaveCount(17);
+  await expect(page.locator('.gallery .clip')).toHaveCount(16);
   const before = await page.locator('.slot').first().boundingBox();
   for (const [name, count] of [['21_fg_2', 3], ['1_fg_4', 5]]) {
     const source = clipByFile(page, name).locator('.clip-preview');
@@ -162,13 +162,13 @@ test('each original clip reveals its own related group without moving slots', as
     const posters = await panel.locator('video').evaluateAll(videos => videos.map(video => video.getAttribute('poster').split('/').at(-1)));
     expect(posters.every(poster => poster.startsWith(`${name.split('_')[0]}_`) && poster !== `${name}.jpg`)).toBe(true);
     await expect(source).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.locator('.gallery .clip')).toHaveCount(17);
+    await expect(page.locator('.gallery .clip')).toHaveCount(16);
     expect((await page.locator('.slot').first().boundingBox()).y).toBe(before.y);
     await expect(panel.locator('.clip-preview').first()).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
     await expect(source).toBeFocused();
-    await expect(page.locator('video')).toHaveCount(17);
+    await expect(page.locator('video')).toHaveCount(16);
   }
   const previous = clipByFile(page, '1_fg_4');
   await previous.locator('.clip-preview').focus();
@@ -211,7 +211,7 @@ test('hover only enlarges while clicks open, switch and dismiss related groups',
   await expect(panel).toBeVisible();
   await page.locator('h1').click();
   await expect(panel).toBeHidden();
-  await expect(page.locator('video')).toHaveCount(17);
+  await expect(page.locator('video')).toHaveCount(16);
 });
 
 test('related groups stay inside the mobile viewport and respect video pause', async ({ browser }) => {

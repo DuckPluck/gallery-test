@@ -462,7 +462,6 @@ document.addEventListener('keydown', event => {
 const anchors = [
   [.34, .34, -5], [.66, .35, 4],
   [.34, .65, -4], [.66, .66, 5],
-  [.50, .50, -2],
 ];
 
 function measurePile(pile) {
